@@ -17,7 +17,7 @@ const CONNECTION_READ_TIMEOUT: i64 = 5000; // Time in ms
 pub fn main() !void {
     var err: c_int = undefined; 
 
-    std.debug.print("Starting\n", .{});
+    std.debug.warn("Starting\n", .{});
 
     const allocator = std.heap.c_allocator;
     const req_listen_addr = try net.Address.parseIp4("0.0.0.0", 5988);
@@ -31,6 +31,7 @@ pub fn main() !void {
     var sndServer = SndServer{
         .clients = std.AutoHashMap(*Client, void).init(allocator),
         .lock = std.Mutex{},
+        // .pulseLock = std.Mutex{},
         .mainloop = pulse.pa_threaded_mainloop_new().?,
         .mainloop_api = undefined,
         .context = undefined,
@@ -54,11 +55,11 @@ pub fn main() !void {
 
     try server.listen(req_listen_addr);
 
-    std.debug.print("Listening at {}\n", .{server.listen_address.getPort()});
+    std.debug.warn("Listening at {}\n", .{server.listen_address.getPort()});
     
     while (true) {
         const client_con = try server.accept();
-        std.debug.print("Client connected!\n", .{});
+        std.debug.warn("Client connected!\n", .{});
         const client = try allocator.create(Client);
         client.* = Client{
             .con = client_con,
@@ -74,6 +75,7 @@ pub fn main() !void {
 const SndServer = struct {
     clients: std.AutoHashMap(*Client, void),
     lock: std.Mutex,
+    // pulseLock: std.Mutex,
     mainloop: *pulse.pa_threaded_mainloop,
     mainloop_api: *pulse.pa_mainloop_api,
     context: *pulse.pa_context,
@@ -115,6 +117,7 @@ const Client = struct {
 
         // Getting AudioStream
         // TODO: Might also need server lock
+        // var pulse_lock = server.pulseLock.acquire();
         pulse.pa_threaded_mainloop_lock(server.mainloop);
 
         var ss = pulse.pa_sample_spec{
@@ -135,6 +138,7 @@ const Client = struct {
 
         err = pulse.pa_stream_connect_playback(stream, null, null, pulse.pa_stream_flags.PA_STREAM_NOFLAGS, null, null);
         pulse.pa_threaded_mainloop_unlock(server.mainloop);
+        // pulse_lock.release();
 
         if(err != 0) { // Some error. What error exactly, i don't know but when it happens but it at least does not crash everything
             std.debug.warn("Error while connecting audio stream {}\n", .{err});
@@ -146,11 +150,12 @@ const Client = struct {
             const amt = try self.con.file.read(&buf);
             self.last_read = std.time.milliTimestamp();
             if (amt == 0) { //Peer disconnected
-                std.debug.print("Peer disconnected!\n", .{});
+                std.debug.warn("Peer disconnected!\n", .{});
                 break;
             }
             const msg = buf[0..amt];
             
+            // pulse_lock = server.pulseLock.acquire();
             pulse.pa_threaded_mainloop_lock(server.mainloop);
             defer pulse.pa_threaded_mainloop_unlock(server.mainloop);
 
@@ -159,6 +164,7 @@ const Client = struct {
                 std.debug.warn("Error while writing audio stream {}\n", .{err});
                 return;
             }
+            // pulse_lock.release();
         }
     }
 };
