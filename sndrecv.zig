@@ -1,22 +1,13 @@
 const std = @import("std");
-
-pub const io_mode = .evented;
-
 const os = std.os;
 const io = std.io;
 const net = std.net;
 const fs = std.fs;
 
-const simplePulse = @cImport({
-    @cInclude("pulse/simple.h");
-});
+pub const io_mode = .evented;
 
 const pulse = @cImport({
     @cInclude("pulse/pulseaudio.h");
-});
-
-const zmq = @cImport({
-    @cInclude("czmq.h");
 });
 
 const CHUNK_SIZE: u32 = 1500;
@@ -31,7 +22,8 @@ pub fn main() !void {
     const allocator = std.heap.c_allocator;
     const req_listen_addr = try net.Address.parseIp4("0.0.0.0", 5988);
     const loop = std.event.Loop.instance.?;
-    loop.beginOneEvent(); // Hotfix for program exiting without it. Might be unecessary?
+    // loop.beginOneEvent(); // Hotfix for program exiting without it. Might be unecessary?
+    // defer loop.finishOneEvent();
 
     var props = pulse.pa_proplist_new();
     defer pulse.pa_proplist_free(props);
@@ -126,7 +118,7 @@ const Client = struct {
         pulse.pa_threaded_mainloop_lock(server.mainloop);
 
         var ss = pulse.pa_sample_spec{
-            .format = pulse.pa_sample_format.PA_SAMPLE_S16LE, //S16LE
+            .format = pulse.pa_sample_format.PA_SAMPLE_S16LE,
             .rate = 48000,
             .channels = 2,
         };
