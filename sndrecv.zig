@@ -91,8 +91,8 @@ const SndServer = struct {
             var current_time = std.time.milliTimestamp();
             while(it.next()) |entry| {
                 if(current_time - entry.key.last_read > CONNECTION_READ_TIMEOUT) { // 5 seconds after last read
-                    entry.key.con.file.close();
                     std.debug.warn("Detected stalled connection. Closing broken connections is WIP\n", .{});
+                    // entry.key.con.file.close();
                 }
             }
         }
@@ -137,7 +137,7 @@ const Client = struct {
         pulse.pa_threaded_mainloop_unlock(server.mainloop);
 
         if(err != 0) { // Some error. What error exactly, i don't know but when it happens but it at least does not crash everything
-        std.debug.warn("Error while connecting audio stream {}\n", .{err});
+            std.debug.warn("Error while connecting audio stream {}\n", .{err});
             return;
         }
 
