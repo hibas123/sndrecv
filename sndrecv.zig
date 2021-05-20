@@ -93,7 +93,7 @@ const SndServer = struct {
             var current_time = std.time.milliTimestamp();
             while(it.next()) |entry| {
                 if(current_time - entry.key.last_read > CONNECTION_READ_TIMEOUT) { // 5 seconds after last read
-                    std.debug.warn("Detected stalled connection. Closing broken connections is WIP\n", .{});
+                    // std.debug.warn("Detected stalled connection. Closing broken connections is WIP\n", .{});
                     // entry.key.con.file.close();
                 }
             }
