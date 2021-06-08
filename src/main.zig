@@ -10,12 +10,12 @@ const pulse = @cImport({
     @cInclude("pulse/pulseaudio.h");
 });
 
-const CHUNK_SIZE: u32 = 1500;
+const CHUNK_SIZE: u32 = 1280;
 
 const CONNECTION_READ_TIMEOUT: i64 = 5000; // Time in ms
 
 pub fn main() !void {
-    var err: c_int = undefined; 
+    var err: c_int = undefined;
 
     std.debug.warn("Starting\n", .{});
 
@@ -30,15 +30,16 @@ pub fn main() !void {
 
     var sndServer = SndServer{
         .clients = std.AutoHashMap(*Client, void).init(allocator),
-        .lock = std.Mutex{},
+        .lock = std.Thread.Mutex{},
         // .pulseLock = std.Mutex{},
         .mainloop = pulse.pa_threaded_mainloop_new().?,
         .mainloop_api = undefined,
         .context = undefined,
-        .checkStalledFrame = undefined
+        .checkStalledFrame = undefined,
     };
 
     //TODO: Is there a better way to do this?
+    // sndServer.announcerFrame = async sndServer.announcer();
     sndServer.checkStalledFrame = async sndServer.checkStalled();
     sndServer.mainloop_api = pulse.pa_threaded_mainloop_get_api(sndServer.mainloop).?;
     sndServer.context = pulse.pa_context_new_with_proplist(sndServer.mainloop_api, "zig-sndrecv", props).?;
@@ -56,7 +57,7 @@ pub fn main() !void {
     try server.listen(req_listen_addr);
 
     std.debug.warn("Listening at {}\n", .{server.listen_address.getPort()});
-    
+
     while (true) {
         const client_con = try server.accept();
         std.debug.warn("Client connected!\n", .{});
@@ -74,27 +75,34 @@ pub fn main() !void {
 
 const SndServer = struct {
     clients: std.AutoHashMap(*Client, void),
-    lock: std.Mutex,
+    lock: std.Thread.Mutex,
     // pulseLock: std.Mutex,
     mainloop: *pulse.pa_threaded_mainloop,
     mainloop_api: *pulse.pa_mainloop_api,
     context: *pulse.pa_context,
+    // announcerFrame: @Frame(announcer),
     checkStalledFrame: @Frame(checkStalled),
+
+    // fn announcer(self: *SndServer) !void {
+    //     // TODO Send UDP announcements
+    // }
+
     fn checkStalled(self: *SndServer) !void {
         const loop = std.event.Loop.instance.?;
-        while(true) {
+        while (true) {
             loop.sleep(2000000000);
 
             var held_lock = self.lock.acquire();
             defer held_lock.release();
-            
+
             var it = self.clients.iterator();
 
             var current_time = std.time.milliTimestamp();
-            while(it.next()) |entry| {
-                if(current_time - entry.key.last_read > CONNECTION_READ_TIMEOUT) { // 5 seconds after last read
+            while (it.next()) |entry| {
+                if (current_time - entry.key.last_read > CONNECTION_READ_TIMEOUT) { // 5 seconds after last read
                     // std.debug.warn("Detected stalled connection. Closing broken connections is WIP\n", .{});
                     // entry.key.con.file.close();
+                    // entry.key.con.stream.close();
                 }
             }
         }
@@ -113,7 +121,7 @@ const Client = struct {
         }
 
         var err: c_int = undefined;
-        _ = try self.con.file.write("SNDStream v0.1\n"); // Is irrelevant for normal connections, but helps debugging :)
+        _ = try self.con.stream.write("SNDStream v0.1\n"); // Is irrelevant for normal connections, but helps debugging :)
 
         // Getting AudioStream
         // TODO: Might also need server lock
@@ -140,27 +148,27 @@ const Client = struct {
         pulse.pa_threaded_mainloop_unlock(server.mainloop);
         // pulse_lock.release();
 
-        if(err != 0) { // Some error. What error exactly, i don't know but when it happens but it at least does not crash everything
+        if (err != 0) { // Some error. What error exactly, i don't know but when it happens but it at least does not crash everything
             std.debug.warn("Error while connecting audio stream {}\n", .{err});
             return;
         }
 
         while (true) {
-            var buf: [CHUNK_SIZE * 2]u8 = undefined;
-            const amt = try self.con.file.read(&buf);
+            var buf: [CHUNK_SIZE * 3]u8 = undefined;
+            const amt = try self.con.stream.read(&buf);
             self.last_read = std.time.milliTimestamp();
             if (amt == 0) { //Peer disconnected
                 std.debug.warn("Peer disconnected!\n", .{});
                 break;
             }
             const msg = buf[0..amt];
-            
+
             // pulse_lock = server.pulseLock.acquire();
             pulse.pa_threaded_mainloop_lock(server.mainloop);
             defer pulse.pa_threaded_mainloop_unlock(server.mainloop);
 
             err = pulse.pa_stream_write(stream, msg.ptr, msg.len, null, 0, pulse.pa_seek_mode.PA_SEEK_RELATIVE);
-            if(err != 0) { // Again I don't know when this happends, but I will just break the connection
+            if (err != 0) { // Again I don't know when this happends, but I will just break the connection
                 std.debug.warn("Error while writing audio stream {}\n", .{err});
                 return;
             }
